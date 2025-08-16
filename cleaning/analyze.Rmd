@@ -1,0 +1,133 @@
+---
+title: "analyze"
+output: html_document
+date: "2025-08-16"
+---
+
+library(tidyverse)
+library(scales)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+panel_df <- readRDS("C:/Users/shiro/OneDrive/デスクトップ/bootcamp/data/cleaned/panel_absence.rds")
+
+# 列名の不要スペースを削除
+names(panel_df) <- str_trim(names(panel_df))
+
+# 数値型に変換
+panel_df <- panel_df %>%
+  mutate(
+    不登校生徒数 = as.numeric(不登校生徒数),
+    不登校割合 = as.numeric(不登校割合)
+  )
+
+glimpse(panel_df)
+
+# 年度別合計不登校者数
+absence_sum <- panel_df %>%
+  group_by(年度) %>%
+  summarise(合計不登校者数 = sum(不登校生徒数, na.rm = TRUE))
+
+ggplot(absence_sum, aes(x = 年度, y = 合計不登校者数)) +
+  geom_col(fill = "steelblue") +
+  scale_x_continuous(breaks = 2013:2022) +  # 1年ごとのメモリ
+  theme_minimal() +
+  labs(title = "年度別 合計不登校者数")
+
+# 年度別平均不登校割合
+library(scales)
+
+ggplot(ratio_sum, aes(x = 年度, y = 平均不登校割合)) +
+  geom_line(group = 1, color = "darkred") +
+  geom_point(color = "darkred") +
+  geom_text(aes(label = percent(平均不登校割合, accuracy = 0.1)),
+            vjust = -0.5, na.rm = TRUE) +
+  scale_x_continuous(breaks = 2013:2022) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 0.1), # Y軸の表示精度を0.1%単位に調整
+    limits = c(0, 0.10),                      # Y軸を0%から10%まで表示
+    expand = c(0, 0)
+  ) +
+  labs(title = "年度別 平均不登校割合") +
+  theme_minimal()
+
+# 合計不登校者数と平均不登校割合の複合グラフ
+absence_sum <- panel_df %>%
+  group_by(年度) %>%
+  summarise(合計不登校者数 = sum(不登校生徒数, na.rm = TRUE)) %>%
+  ungroup()
+
+ratio_sum <- panel_df %>%
+  group_by(年度) %>%
+  summarise(平均不登校割合 = mean(不登校割合, na.rm = TRUE)) %>%
+  ungroup()
+
+absence_plot_df <- left_join(absence_sum, ratio_sum, by = "年度")
+
+max_total_absence_value <- max(absence_plot_df$合計不登校者数, na.rm = TRUE)
+
+target_percent_max <- 0.10
+
+scaling_factor <- max_total_absence_value / target_percent_max
+
+absence_plot_df <- absence_plot_df %>%
+  mutate(平均不登校割合_scaled = 平均不登校割合 * scaling_factor)
+
+ggplot(absence_plot_df, aes(x = 年度)) +
+  geom_col(aes(y = 合計不登校者数), fill = "steelblue") +
+  geom_line(aes(y = 平均不登校割合_scaled), group = 1, color = "darkred", size = 1) +
+  scale_x_continuous(breaks = 2013:2022) +
+  scale_y_continuous(
+    name = "合計不登校者数",
+    sec.axis = sec_axis(
+      ~./scaling_factor,
+      name = "平均不登校割合",
+      breaks = c(0.00, 0.025, 0.050, 0.075, 0.100),
+      labels = scales::percent_format(accuracy = 0.5)
+    )
+  ) +
+  labs(title = "合計不登校者数と平均不登校割合の推移") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# 2022年度の分布
+ggplot(df2022, aes(x = 不登校割合)) +
+  geom_histogram(binwidth = 0.005, fill = "lightblue", color = "black") +
+  geom_vline(xintercept = mean_ratio, linetype = "dashed", color = "red", linewidth = 1) +
+  
+  scale_x_continuous(
+    labels = scales::percent_format(accuracy = 0.1), 
+    limits = c(0.065, 0.11), 
+    breaks = seq(0.065, 0.11, by = 0.005),  
+    expand = c(0, 0) 
+  ) +
+  
+  labs(title = "2022年度 不登校割合の分布", x = "不登校割合", y = "度数") +
+  
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+# 都道府県別 2022年度不登校割合 
+my_pref <- "東京"
+
+
+df2022_plot <- df2022 %>%
+filter(!is.na(都道府県) & !is.na(不登校割合)) %>%
+group_by(都道府県) %>%
+summarise(不登校割合 = mean(不登校割合, na.rm = TRUE)) %>%
+ungroup() %>%
+mutate(
+都道府県 = fct_reorder(都道府県, 不登校割合, .desc = TRUE),
+color_flag = ifelse(都道府県 == my_pref, "pink", "gray")
+)
+
+
+ggplot(df2022_plot, aes(x = 不登校割合, y = 都道府県, fill = color_flag)) +
+geom_col() +
+scale_fill_manual(values = c("pink" = "pink", "gray" = "gray"), guide = "none") +
+scale_x_continuous(labels = scales::percent_format(accuracy = 1)) + # X軸が不登校割合になるので、X軸のラベルをパーセンテージに
+labs(title = "2022年度 都道府県別 不登校割合") +
+theme_minimal() +
+
+
+theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
